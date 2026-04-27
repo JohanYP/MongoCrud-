@@ -1,86 +1,103 @@
 const express = require('express');
 const { MongoClient, ObjectId } = require('mongodb');
+const path = require('path');
 
 const app = express();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
+const MONGO_URL = process.env.MONGO_URL || 'mongodb://localhost:27017,mongo2:27018,mongo3:27019/test_db?replicaSet=rs0';
+const DB_NAME = 'test_db';
 
 app.use(express.json());
-app.use(express.static('.')); 
+app.use(express.static(path.join(__dirname, 'public')));
 
+const client = new MongoClient(MONGO_URL, { serverSelectionTimeoutMS: 30000 });
 
-const url = process.env.MONGO_URL || "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/test_db?replicaSet=rs0";
-
-const client = new MongoClient(url);
-const dbName = 'test_db';
-
-async function iniciarServidor() {
+async function conectar(reintentos = 5, esperaMs = 3000) {
+  for (let i = 1; i <= reintentos; i++) {
     try {
-        await client.connect();
-        console.log("Conexión mela al mongo");
-        
-        const db = client.db(dbName);
-        const usuariosCollection = db.collection('user');
-
-        // --- RUTAS DEL API ---
-
-        // 1. Obtener todos los usuarios
-        app.get('/usuarios', async (req, res) => {
-            try {
-                const lista = await usuariosCollection.find({}).toArray();
-                res.json(lista);
-            } catch (err) {
-                res.status(500).json({ error: "Error al obtener usuarios" });
-            }
-        });
-
-        // 2. Crear un nuevo usuario
-        app.post('/usuarios', async (req, res) => {
-            try {
-                const resultado = await usuariosCollection.insertOne(req.body);
-                res.status(201).json(resultado);
-            } catch (err) {
-                res.status(500).json({ error: "Error al crear usuario" });
-            }
-        });
-
-        // 3. Actualizar un usuario por ID
-        app.put('/usuarios/:id', async (req, res) => {
-            try {
-                const id = req.params.id;
-                const datosActualizados = req.body;
-                
-                const resultado = await usuariosCollection.updateOne(
-                    { _id: new ObjectId(id) },
-                    { $set: datosActualizados }
-                );
-                
-                res.json(resultado);
-            } catch (err) {
-                res.status(500).json({ error: "Error al actualizar usuario" });
-            }
-        });
-
-        // 4. Borrar un usuario por ID
-        app.delete('/usuarios/:id', async (req, res) => {
-            try {
-                const id = req.params.id;
-                await usuariosCollection.deleteOne({ _id: new ObjectId(id) });
-                res.json({ mensaje: "Usuario eliminado correctamente" });
-            } catch (err) {
-                res.status(500).json({ error: "Error al eliminar usuario" });
-            }
-        });
-
-
-        app.listen(PORT, () => {
-            console.log(`Servidor corriendo en: http://localhost:${PORT}`);
-        });
-
-    } catch (error) {
-        console.error("No se pudo conectar a MongoDB. Asegúrate de que el servicio esté activo.");
-        console.error(error);
-        process.exit(1);
+      await client.connect();
+      console.log('[MongoDB] Conectado correctamente.');
+      return client.db(DB_NAME);
+    } catch (err) {
+      console.warn(`[MongoDB] Intento ${i}/${reintentos} fallido: ${err.message}`);
+      if (i === reintentos) throw err;
+      await new Promise(r => setTimeout(r, esperaMs));
     }
+  }
 }
 
-iniciarServidor();
+async function iniciarServidor() {
+  const db = await conectar();
+  const usuarios = db.collection('usuarios');
+
+  // GET — listar todos
+  app.get('/usuarios', async (req, res) => {
+    try {
+      const lista = await usuarios.find({}).toArray();
+      res.json(lista);
+    } catch (err) {
+      console.error('[GET /usuarios]', err.message);
+      res.status(500).json({ error: 'Error al obtener usuarios' });
+    }
+  });
+
+  // POST — crear
+  app.post('/usuarios', async (req, res) => {
+    try {
+      const { nombre, email, edad } = req.body;
+      if (!nombre || !email || edad === undefined) {
+        return res.status(400).json({ error: 'Nombre, email y edad son requeridos' });
+      }
+      const resultado = await usuarios.insertOne({
+        nombre,
+        email,
+        edad: Number(edad),
+      });
+      res.status(201).json(resultado);
+    } catch (err) {
+      console.error('[POST /usuarios]', err.message);
+      res.status(500).json({ error: 'Error al crear usuario' });
+    }
+  });
+
+  // PUT — actualizar
+  app.put('/usuarios/:id', async (req, res) => {
+    try {
+      const { nombre, email, edad } = req.body;
+      const resultado = await usuarios.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { nombre, email, edad: Number(edad) } }
+      );
+      res.json(resultado);
+    } catch (err) {
+      console.error('[PUT /usuarios/:id]', err.message);
+      res.status(500).json({ error: 'Error al actualizar usuario' });
+    }
+  });
+
+  // DELETE — eliminar
+  app.delete('/usuarios/:id', async (req, res) => {
+    try {
+      await usuarios.deleteOne({ _id: new ObjectId(req.params.id) });
+      res.json({ mensaje: 'Usuario eliminado correctamente' });
+    } catch (err) {
+      console.error('[DELETE /usuarios/:id]', err.message);
+      res.status(500).json({ error: 'Error al eliminar usuario' });
+    }
+  });
+
+  app.listen(PORT, () => {
+    console.log(`[Servidor] Corriendo en http://localhost:${PORT}`);
+  });
+
+  process.on('SIGTERM', async () => {
+    console.log('[Servidor] Cerrando conexión con MongoDB...');
+    await client.close();
+    process.exit(0);
+  });
+}
+
+iniciarServidor().catch(err => {
+  console.error('[FATAL] No se pudo iniciar el servidor:', err.message);
+  process.exit(1);
+});
