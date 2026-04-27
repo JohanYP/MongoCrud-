@@ -3,9 +3,9 @@ services:
   mongo1:
     image: mongo:8
     container_name: mongo1
-    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
     healthcheck:
-      test: [ "CMD", "mongosh", "--port", "27017", "--eval", "db.adminCommand('ping')" ]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -20,15 +20,15 @@ services:
   mongo2:
     image: mongo:8
     container_name: mongo2
-    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27018" ]
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
     healthcheck:
-      test: [ "CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')" ]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 15s
     ports:
-      - "27018:27018"
+      - "27018:27017" # ← externo 27018, interno 27017
     volumes:
       - mongo2_data:/data/db
     networks:
@@ -37,15 +37,15 @@ services:
   mongo3:
     image: mongo:8
     container_name: mongo3
-    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27019" ]
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
     healthcheck:
-      test: [ "CMD", "mongosh", "--port", "27019", "--eval", "db.adminCommand('ping')" ]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 15s
     ports:
-      - "27019:27019"
+      - "27019:27017" # ← externo 27019, interno 27017
     volumes:
       - mongo3_data:/data/db
     networks:
@@ -54,15 +54,15 @@ services:
   mongo-arbiter:
     image: mongo:8
     container_name: mongo-arbiter
-    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27020" ]
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
     healthcheck:
-      test: [ "CMD", "mongosh", "--port", "27020", "--eval", "db.adminCommand('ping')" ]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 15s
     ports:
-      - "27020:27020"
+      - "27020:27017" # ← externo 27020, interno 27017
     volumes:
       - mongo_arb_data:/data/db
     networks:
@@ -82,16 +82,16 @@ services:
           rs.initiate({
             _id: 'rs0',
             members: [
-              { _id: 0, host: 'mongo1:27017',        priority: 2 },
-              { _id: 1, host: 'mongo2:27018',        priority: 1 },
-              { _id: 2, host: 'mongo3:27019',        priority: 1 },
-              { _id: 3, host: 'mongo-arbiter:27020', arbiterOnly: true }
+              { _id: 0, host: 'mongo1:27017', priority: 2 },
+              { _id: 1, host: 'mongo2:27017', priority: 1 },
+              { _id: 2, host: 'mongo3:27017', priority: 1 },
+              { _id: 3, host: 'mongo-arbiter:27017', arbiterOnly: true }
             ]
           });
           print('Replica Set inicializado correctamente');
         } catch(e) {
           if (e.message.includes('already initialized')) {
-            print('El Replica Set ya estaba inicializado');
+            print('Ya estaba inicializado');
           } else { throw e; }
         }
       "
@@ -104,7 +104,7 @@ services:
     ports:
       - "4000:4000"
     environment:
-      - MONGO_URL=mongodb://mongo1:27017,mongo2:27018,mongo3:27019/test_db?replicaSet=rs0
+      - MONGO_URL=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/test_db?replicaSet=rs0
       - PORT=4000
     depends_on:
       mongo-init:
