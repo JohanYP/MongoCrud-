@@ -1,4 +1,3 @@
-```markdown
 # MongoCrud
 
 CRUD de usuarios con **Node.js + Express + MongoDB Replica Set** ejecutado en Docker. El proyecto permite crear, listar, actualizar y eliminar usuarios desde una interfaz web, mientras demuestra replicación y failover de MongoDB de forma práctica. 
