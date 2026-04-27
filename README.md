@@ -202,4 +202,3 @@ docker start mongo1
 ## Autor
 
 Proyecto desarrollado por **JohanYP** y orientado a practicar CRUD, Docker, MongoDB Replica Sets y failover local.
-```
