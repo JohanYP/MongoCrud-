@@ -1,0 +1,80 @@
+services:
+  # Base de Datos - Nodo 1
+  mongo1:
+    image: mongo:latest
+    container_name: mongo1
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1_data:/data/db
+
+  # Base de Datos - Nodo 2
+  mongo2:
+    image: mongo:latest
+    container_name: mongo2
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo2_data:/data/db
+
+  # Base de Datos - Nodo 3
+  mongo3:
+    image: mongo:latest
+    container_name: mongo3
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo3_data:/data/db
+
+  # Árbitro
+  mongo-arbiter:
+    image: mongo:latest
+    container_name: mongo-arbiter
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
+    ports:
+      - "27020:27017"
+    volumes:
+      - mongo_arb_data:/data/db
+
+  # Automatización de la configuración del Replica Set
+  mongo-init:
+    image: mongo:latest
+    depends_on:
+      mongo1:
+        condition: service_healthy
+    entrypoint: >
+      mongosh --host mongo1:27017 --eval "
+        rs.initiate({
+          _id: 'rs0',
+          members: [
+            { _id: 0, host: 'mongo1:27017', priority: 2 },
+            { _id: 1, host: 'mongo2:27017', priority: 1 },
+            { _id: 2, host: 'mongo3:27017', priority: 1 },
+            { _id: 3, host: 'mongo-arbiter:27017', arbiterOnly: true }
+          ]
+        })
+      "
+
+  # Tu aplicación CRUD
+  app:
+    build: ./crudMongo
+    container_name: crud-app
+    ports:
+      - "4000:4000"
+    depends_on:
+      - mongo-init
+    restart: always
+
+volumes:
+  mongo1_data:
+  mongo2_data:
+  mongo3_data:
+  mongo_arb_data:
